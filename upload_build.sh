@@ -6,20 +6,34 @@ set -e
 set -o nounset
 
 if [[ $(uname) == *"MSYS"* ]]; then
-  ARCH="windows"
+  PLATFORM="windows"
   EXT=".exe"
 else
-  ARCH=$(uname | tr '[:upper:]' '[:lower:]')
+  PLATFORM=$(uname | tr '[:upper:]' '[:lower:]')
   EXT=""
   if [[ -n "${RELEASE_TAG:-}" ]]; then
-      ARCH="$ARCH-$RELEASE_TAG"
+      PLATFORM="$PLATFORM-$RELEASE_TAG"
   fi
 fi
+ARCH="$(uname -m)"
+if [[ "${GOARCH:-}" != "" ]]; then
+  ARCH="$GOARCH"
+fi
+if [[ "$ARCH" == "x86_64" ]]; then
+  ARCH="amd64"
+fi
+if [[ "$ARCH" == "aarch64" ]]; then
+  ARCH="arm64"
+fi
+if [[ "$ARCH" != "amd64" ]] && [[ "$ARCH" != "arm64" ]]; then
+  echo "Unknown/unsupported architecture: $ARCH"
+  exit 1
+fi
 
-BASE="livepool-$ARCH-amd64"
-BRANCH="${TRAVIS_BRANCH:-${CIRCLE_BRANCH:-unknown}}"
-if [[ "${GITHUB_REF:-}" != "" ]]; then
-  BRANCH="$(echo $GITHUB_REF | sed 's/refs\/heads\///')"
+BASE="livepeer-$PLATFORM-$ARCH"
+BRANCH="${TRAVIS_BRANCH:-unknown}"
+if [[ "${GHA_REF:-}" != "" ]]; then
+  BRANCH="$(echo $GHA_REF | sed 's/refs\/heads\///')"
 fi
 VERSION="$(./print_version.sh)"
 if echo $VERSION | grep dirty; then
@@ -54,7 +68,7 @@ mkdir $BASE
 cp $POOL $BASE
 
 # do a basic upload so we know if stuff's working prior to doing everything else
-if [[ $ARCH == "windows" ]]; then
+if [[ $PLATFORM == "windows" ]]; then
   FILE=$BASE.zip
   zip -r ./$FILE ./$BASE
 else
@@ -63,9 +77,6 @@ else
 fi
 
 FILE_SHA256=`shasum -a 256 ${FILE}`
-
-# Quick self-check to see if the thing can execute at all
-(cd $BASE && $POOL -version)
 
 if [[ "${GCLOUD_KEY:-}" == "" ]]; then
   echo "GCLOUD_KEY not found, not uploading to Google Cloud."
@@ -94,4 +105,7 @@ curl -X PUT -T "${FILE}" \
   -H "Authorization: AWS ${GCLOUD_KEY}:${signature}" \
   $fullUrl
 
+echo "upload done"
+
+curl --fail -s -H "Content-Type: application/json" -X POST -d "{\"content\": \"Build succeeded ✅\nBranch: $BRANCH\nPlatform: $PLATFORM-$ARCH\nLast commit: $(git log -1 --pretty=format:'%s by %an')\nhttps://build.livepeer.live/$VERSION_AND_NETWORK/${FILE}\nSHA256:\n${FILE_SHA256}\"}" $DISCORD_URL
 echo "done"
