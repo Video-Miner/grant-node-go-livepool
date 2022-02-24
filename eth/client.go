@@ -157,7 +157,7 @@ type client struct {
 	gasLimit uint64
 	gasPrice *big.Int
 
-	txTimeout time.Duration
+	checkTxTimeout time.Duration
 }
 
 type LivepeerEthClientConfig struct {
@@ -167,6 +167,7 @@ type LivepeerEthClientConfig struct {
 	TransactionManager *TransactionManager
 	Signer             types.Signer
 	ControllerAddr     ethcommon.Address
+	CheckTxTimeout     time.Duration
 }
 
 func NewClient(cfg LivepeerEthClientConfig) (LivepeerEthClient, error) {
@@ -178,6 +179,7 @@ func NewClient(cfg LivepeerEthClientConfig) (LivepeerEthClient, error) {
 		backend:        backend,
 		tm:             cfg.TransactionManager,
 		controllerAddr: cfg.ControllerAddr,
+		checkTxTimeout: cfg.CheckTxTimeout,
 	}, nil
 }
 
@@ -1101,8 +1103,13 @@ func (c *client) CheckTx(tx *types.Transaction) error {
 	txSub := c.tm.Subscribe(receipts)
 	defer txSub.Unsubscribe()
 
+	timer := time.NewTimer(c.checkTxTimeout)
+	defer timer.Stop()
+
 	for {
 		select {
+		case <-timer.C:
+			return fmt.Errorf("timed out waiting for transaction receipt txHash=%v", tx.Hash().Hex())
 		case err := <-txSub.Err():
 			return err
 		case receipt := <-receipts:
