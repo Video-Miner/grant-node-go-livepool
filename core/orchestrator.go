@@ -673,7 +673,11 @@ func (n *LivepeerNode) transcodeSegmentLoop(logCtx context.Context, md *SegTrans
 
 func (n *LivepeerNode) serveTranscoder(stream net.Transcoder_RegisterTranscoderServer, capacity int, capabilities *net.Capabilities, ethereumAddr ethcommon.Address) {
 	from := common.GetConnectionAddr(stream.Context())
-	n.TranscoderManager.Manage(stream, capacity, capabilities, ethereumAddr)
+	coreCaps := CapabilitiesFromNetCapabilities(capabilities)
+	n.Capabilities.AddCapacity(coreCaps)
+	defer n.Capabilities.RemoveCapacity(coreCaps)
+	// Manage blocks while transcoder is connected
+	n.TranscoderManager.Manage(stream, capacity, capabilities)
 	glog.V(common.DEBUG).Infof("Closing transcoder=%s channel", from)
 }
 
