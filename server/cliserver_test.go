@@ -27,7 +27,7 @@ import (
 )
 
 func newMockServer() *httptest.Server {
-	n, _ := core.NewLivepeerNode(nil, "./tmp", nil)
+	n, _ := core.NewLivepeerNode(&eth.StubClient{}, "./tmp", nil)
 	n.NodeType = core.TranscoderNode
 	n.TranscoderManager = core.NewRemoteTranscoderManager()
 	strm := &common.StubServerStream{}
@@ -126,7 +126,7 @@ func TestActivateOrchestrator(t *testing.T) {
 	body, err = ioutil.ReadAll(res.Body)
 	res.Body.Close()
 	require.Nil(err)
-	assert.Equal(strings.TrimSpace(string(body)), "Need to provide block reward cut")
+	assert.Equal(strings.TrimSpace(string(body)), "missing form param: blockRewardCut")
 
 	// Test invalid block reward cut
 	form["blockRewardCut"] = []string{"foo"}
@@ -147,7 +147,7 @@ func TestActivateOrchestrator(t *testing.T) {
 	body, err = ioutil.ReadAll(res.Body)
 	res.Body.Close()
 	require.Nil(err)
-	assert.Equal(strings.TrimSpace(string(body)), "Need to provide fee share")
+	assert.Equal(strings.TrimSpace(string(body)), "missing form param: feeShare")
 
 	// Test invalid feeshare
 	form["feeShare"] = []string{"foo"}
@@ -170,7 +170,7 @@ func TestActivateOrchestrator(t *testing.T) {
 	body, err = ioutil.ReadAll(res.Body)
 	res.Body.Close()
 	require.Nil(err)
-	assert.Equal(strings.TrimSpace(string(body)), "Need to provide a service URI")
+	assert.Equal(strings.TrimSpace(string(body)), "missing form param: serviceURI")
 
 	// Test invalid ServiceURI
 	form["serviceURI"] = []string{"hello world"}
@@ -189,7 +189,6 @@ func TestActivateOrchestrator(t *testing.T) {
 	body, err = ioutil.ReadAll(res.Body)
 	res.Body.Close()
 	require.Nil(err)
-	assert.Equal(strings.TrimSpace(string(body)), "success")
 }
 
 func TestGetStatus(t *testing.T) {
@@ -212,18 +211,6 @@ func TestGetEthChainID(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 
-	// test offchain
-	srv := newMockServer()
-	res, err := http.Get(fmt.Sprintf("%s/EthChainID", srv.URL))
-	require.Nil(err)
-	assert.Equal(http.StatusOK, res.StatusCode)
-	body, err := ioutil.ReadAll(res.Body)
-	require.Nil(err)
-	assert.Equal("0", string(body))
-	defer res.Body.Close()
-	defer srv.Close()
-
-	// test onchain
 	dbh, dbraw, err := common.TempDB(t)
 	require.Nil(err)
 	defer dbh.Close()
@@ -234,12 +221,12 @@ func TestGetEthChainID(t *testing.T) {
 	n, _ := core.NewLivepeerNode(&eth.StubClient{}, "./tmp", dbh)
 	s, _ := NewLivepeerServer("127.0.0.1:1938", n, true, "")
 	mux := s.cliWebServerHandlers("addr")
-	srv = httptest.NewServer(mux)
+	srv := httptest.NewServer(mux)
 	defer srv.Close()
-	res, err = http.Get(fmt.Sprintf("%s/EthChainID", srv.URL))
+	res, err := http.Get(fmt.Sprintf("%s/EthChainID", srv.URL))
 	require.Nil(err)
 	assert.Equal(http.StatusOK, res.StatusCode)
-	body, err = ioutil.ReadAll(res.Body)
+	body, err := ioutil.ReadAll(res.Body)
 	defer res.Body.Close()
 	require.Nil(err)
 	assert.Equal("1", string(body))
@@ -270,7 +257,7 @@ func TestGetDelegatorInfo(t *testing.T) {
 	defer res.Body.Close()
 	body, err := ioutil.ReadAll(res.Body)
 	req.Nil(err)
-	assert.Equal("{}", string(body))
+	assert.Equal("null", string(body))
 }
 
 func TestRegisteredOrchestrators(t *testing.T) {
@@ -345,6 +332,8 @@ func TestRegisteredOrchestrators(t *testing.T) {
 
 	eth.TranscoderPoolError = errors.New("error")
 	res, err = http.Get(fmt.Sprintf("%s/registeredOrchestrators", srv.URL))
+	defer res.Body.Close()
+
 	assert.Nil(err)
 	assert.Equal(http.StatusInternalServerError, res.StatusCode)
 }
