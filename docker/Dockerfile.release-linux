@@ -14,6 +14,8 @@ COPY --from=livepool/build:latest /build/livepool /usr/bin/livepool
 
 COPY --from=livepeerci/build:latest /build/tasmodel.pb /tasmodel.pb
 
+COPY --from=livepeerci/build:latest /usr/share/misc/pci.ids /usr/share/misc/pci.ids
+
 # libtensorflow shared libraries are in /usr/local
 COPY --from=livepeerci/build:latest /usr/local /usr/local
 # Configure linker
