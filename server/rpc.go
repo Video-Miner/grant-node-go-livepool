@@ -502,6 +502,13 @@ func coreSegMetadata(segData *net.SegData) (*core.SegTranscodingMetadata, error)
 		}
 		detectorProfs = append(detectorProfs, detectorProfile)
 	}
+	var segPar *core.SegmentParameters
+	if segData.SegmentParameters != nil {
+		segPar = &core.SegmentParameters{
+			From: time.Duration(segData.SegmentParameters.From) * time.Millisecond,
+			To:   time.Duration(segData.SegmentParameters.To) * time.Millisecond,
+		}
+	}
 
 	return &core.SegTranscodingMetadata{
 		ManifestID:         core.ManifestID(segData.ManifestId),
@@ -515,5 +522,6 @@ func coreSegMetadata(segData *net.SegData) (*core.SegTranscodingMetadata, error)
 		DetectorEnabled:    segData.DetectorEnabled,
 		DetectorProfiles:   detectorProfs,
 		CalcPerceptualHash: segData.CalcPerceptualHash,
+		SegmentParameters:  segPar,
 	}, nil
 }
