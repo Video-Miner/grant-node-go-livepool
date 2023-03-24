@@ -670,8 +670,13 @@ func (n *LivepeerNode) transcodeSegmentLoop(logCtx context.Context, md *SegTrans
 
 func (n *LivepeerNode) endTranscodingSession(sessionId string, logCtx context.Context) {
 	// timeout; clean up goroutine here
+	var (
+		exists  bool
+		storage *transcodeConfig
+		sess    *RemoteTranscoder
+	)
 	n.storageMutex.Lock()
-	if storage, exists := n.StorageConfigs[sessionId]; exists {
+	if storage, exists = n.StorageConfigs[sessionId]; exists {
 		storage.OS.EndSession()
 		storage.LocalOS.EndSession()
 		delete(n.StorageConfigs, sessionId)
@@ -681,7 +686,7 @@ func (n *LivepeerNode) endTranscodingSession(sessionId string, logCtx context.Co
 	if n.TranscoderManager != nil {
 		n.TranscoderManager.RTmutex.Lock()
 		// send empty segment to signal transcoder internal session teardown if session exist
-		if sess, exists := n.TranscoderManager.streamSessions[sessionId]; exists {
+		if sess, exists = n.TranscoderManager.streamSessions[sessionId]; exists {
 			segData := &net.SegData{
 				AuthToken: &net.AuthToken{SessionId: sessionId},
 			}
@@ -695,7 +700,7 @@ func (n *LivepeerNode) endTranscodingSession(sessionId string, logCtx context.Co
 	}
 	n.segmentMutex.Lock()
 	mid := ManifestID(sessionId)
-	if _, ok := n.SegmentChans[mid]; ok {
+	if _, exists = n.SegmentChans[mid]; exists {
 		close(n.SegmentChans[mid])
 		delete(n.SegmentChans, mid)
 		if lpmon.Enabled {
@@ -703,6 +708,9 @@ func (n *LivepeerNode) endTranscodingSession(sessionId string, logCtx context.Co
 		}
 	}
 	n.segmentMutex.Unlock()
+	if exists {
+		clog.V(common.DEBUG).Infof(logCtx, "Transcoding session ended by the Broadcaster for sessionID=%v", sessionId)
+	}
 }
 
 func (n *LivepeerNode) serveTranscoder(stream net.Transcoder_RegisterTranscoderServer, capacity int, capabilities *net.Capabilities) {
@@ -999,9 +1007,7 @@ func (rtm *RemoteTranscoderManager) selectTranscoder(sessionId string, caps *Cap
 
 // ends transcoding session and releases resources
 func (node *LivepeerNode) EndTranscodingSession(sessionId string) {
-	logCtx := context.TODO()
-	node.endTranscodingSession(sessionId, logCtx)
-	clog.V(common.DEBUG).Infof(logCtx, "Transcoding session ended by the Broadcaster for sessionID=%v", sessionId)
+	node.endTranscodingSession(sessionId, context.TODO())
 }
 
 func (node *RemoteTranscoderManager) EndTranscodingSession(sessionId string) {
