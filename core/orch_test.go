@@ -1428,7 +1428,7 @@ func TestPriceInfo(t *testing.T) {
 	recipient.On("TxCostMultiplier", mock.Anything).Return(txMultiplier, nil)
 	orch := NewOrchestrator(n, nil)
 
-	priceInfo, err := orch.PriceInfo(ethcommon.Address{})
+	priceInfo, err := orch.PriceInfo(ethcommon.Address{}, "")
 	assert.Nil(err)
 	assert.Zero(expPricePerPixel.Cmp(big.NewRat(priceInfo.PricePerUnit, priceInfo.PixelsPerUnit)))
 	fixedPrice, err := common.PriceToFixed(expPricePerPixel)
@@ -1443,7 +1443,7 @@ func TestPriceInfo(t *testing.T) {
 	orch = NewOrchestrator(n, nil)
 	expPricePerPixel = big.NewRat(1010, 100)
 
-	priceInfo, err = orch.PriceInfo(ethcommon.Address{})
+	priceInfo, err = orch.PriceInfo(ethcommon.Address{}, "")
 	assert.Nil(err)
 	assert.Zero(expPricePerPixel.Cmp(big.NewRat(priceInfo.PricePerUnit, priceInfo.PixelsPerUnit)))
 	fixedPrice, err = common.PriceToFixed(expPricePerPixel)
@@ -1458,7 +1458,7 @@ func TestPriceInfo(t *testing.T) {
 	orch = NewOrchestrator(n, nil)
 	expPricePerPixel = big.NewRat(101, 1000)
 
-	priceInfo, err = orch.PriceInfo(ethcommon.Address{})
+	priceInfo, err = orch.PriceInfo(ethcommon.Address{}, "")
 	assert.Nil(err)
 	assert.Zero(expPricePerPixel.Cmp(big.NewRat(priceInfo.PricePerUnit, priceInfo.PixelsPerUnit)))
 	fixedPrice, err = common.PriceToFixed(expPricePerPixel)
@@ -1472,7 +1472,7 @@ func TestPriceInfo(t *testing.T) {
 	orch = NewOrchestrator(n, nil)
 	expPricePerPixel = big.NewRat(2525, 1000)
 
-	priceInfo, err = orch.PriceInfo(ethcommon.Address{})
+	priceInfo, err = orch.PriceInfo(ethcommon.Address{}, "")
 	assert.Nil(err)
 	assert.Zero(expPricePerPixel.Cmp(big.NewRat(priceInfo.PricePerUnit, priceInfo.PixelsPerUnit)))
 	fixedPrice, err = common.PriceToFixed(expPricePerPixel)
@@ -1491,7 +1491,7 @@ func TestPriceInfo(t *testing.T) {
 	orch = NewOrchestrator(n, nil)
 	expPricePerPixel = big.NewRat(11, 1)
 
-	priceInfo, err = orch.PriceInfo(ethcommon.Address{})
+	priceInfo, err = orch.PriceInfo(ethcommon.Address{}, "")
 	assert.Nil(err)
 	assert.Zero(expPricePerPixel.Cmp(big.NewRat(priceInfo.PricePerUnit, priceInfo.PixelsPerUnit)))
 	fixedPrice, err = common.PriceToFixed(expPricePerPixel)
@@ -1510,7 +1510,7 @@ func TestPriceInfo(t *testing.T) {
 	orch = NewOrchestrator(n, nil)
 	expPricePerPixel = big.NewRat(1100, 10)
 
-	priceInfo, err = orch.PriceInfo(ethcommon.Address{})
+	priceInfo, err = orch.PriceInfo(ethcommon.Address{}, "")
 	assert.Nil(err)
 	assert.Zero(expPricePerPixel.Cmp(big.NewRat(priceInfo.PricePerUnit, priceInfo.PixelsPerUnit)))
 	fixedPrice, err = common.PriceToFixed(expPricePerPixel)
@@ -1529,7 +1529,7 @@ func TestPriceInfo(t *testing.T) {
 	orch = NewOrchestrator(n, nil)
 	expPricePerPixel = big.NewRat(20, 1)
 
-	priceInfo, err = orch.PriceInfo(ethcommon.Address{})
+	priceInfo, err = orch.PriceInfo(ethcommon.Address{}, "")
 	assert.Nil(err)
 	assert.Zero(expPricePerPixel.Cmp(big.NewRat(priceInfo.PricePerUnit, priceInfo.PixelsPerUnit)))
 	fixedPrice, err = common.PriceToFixed(expPricePerPixel)
@@ -1542,7 +1542,7 @@ func TestPriceInfo(t *testing.T) {
 	n.SetBasePrice("default", big.NewRat(0, 1))
 	orch = NewOrchestrator(n, nil)
 
-	priceInfo, err = orch.PriceInfo(ethcommon.Address{})
+	priceInfo, err = orch.PriceInfo(ethcommon.Address{}, "")
 	assert.Nil(err)
 	assert.Zero(priceInfo.PricePerUnit)
 	assert.Equal(int64(1), priceInfo.PixelsPerUnit)
@@ -1560,7 +1560,7 @@ func TestPriceInfo(t *testing.T) {
 	overhead := new(big.Rat).Add(big.NewRat(1, 1), new(big.Rat).Inv(txMultiplier))
 	expPricePerPixel = new(big.Rat).Mul(basePrice, overhead) // 23953749205332825000/926899968213313
 	require.Equal(expPricePerPixel.Num().Cmp(big.NewInt(int64(math.MaxInt64))), 1)
-	priceInfo, err = orch.PriceInfo(ethcommon.Address{})
+	priceInfo, err = orch.PriceInfo(ethcommon.Address{}, "")
 	assert.Nil(err)
 	// for this case price will be rounded when converting to fixed
 	assert.NotEqual(expPricePerPixel.Cmp(big.NewRat(priceInfo.PricePerUnit, priceInfo.PixelsPerUnit)), 0)
@@ -1576,7 +1576,7 @@ func TestPriceInfo(t *testing.T) {
 
 	// Now make sure when AutoAdjustPrice = false we are returning the base price
 	n.AutoAdjustPrice = false
-	priceInfo, err = orch.PriceInfo(ethcommon.Address{})
+	priceInfo, err = orch.PriceInfo(ethcommon.Address{}, "")
 	assert.Nil(err)
 	assert.Equal(basePrice, big.NewRat(priceInfo.PricePerUnit, priceInfo.PixelsPerUnit))
 }
@@ -1586,7 +1586,7 @@ func TestPriceInfo_GivenNilNode_ReturnsNilError(t *testing.T) {
 	orch := NewOrchestrator(n, nil)
 	orch.node = nil
 
-	priceInfo, err := orch.PriceInfo(ethcommon.Address{})
+	priceInfo, err := orch.PriceInfo(ethcommon.Address{}, "")
 	assert.Nil(t, err)
 	assert.Nil(t, priceInfo)
 }
@@ -1596,7 +1596,7 @@ func TestPriceInfo_GivenNilRecipient_ReturnsNilError(t *testing.T) {
 	orch := NewOrchestrator(n, nil)
 	n.Recipient = nil
 
-	priceInfo, err := orch.PriceInfo(ethcommon.Address{})
+	priceInfo, err := orch.PriceInfo(ethcommon.Address{}, "")
 	assert.Nil(t, err)
 	assert.Nil(t, priceInfo)
 }
@@ -1611,7 +1611,7 @@ func TestPriceInfo_TxMultiplierError_ReturnsError(t *testing.T) {
 	recipient.On("TxCostMultiplier", mock.Anything).Return(nil, expError)
 	orch := NewOrchestrator(n, nil)
 
-	priceInfo, err := orch.PriceInfo(ethcommon.Address{})
+	priceInfo, err := orch.PriceInfo(ethcommon.Address{}, "")
 	assert.Nil(t, priceInfo)
 	assert.EqualError(t, err, expError.Error())
 }
