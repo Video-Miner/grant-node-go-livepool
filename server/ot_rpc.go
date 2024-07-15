@@ -12,12 +12,10 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/textproto"
-	"net/url"
 	"os"
 	"os/signal"
 	"path"
 	"strconv"
-	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -30,12 +28,14 @@ import (
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/status"
 
-	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/livepeer/go-livepeer/clog"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/monitor"
 	"github.com/livepeer/go-livepeer/net"
+
+	// Open Pool
+	ethcommon "github.com/ethereum/go-ethereum/common"
 )
 
 const protoVerLPT = "Livepeer-Transcoder-1.0"
@@ -45,19 +45,22 @@ var errSecret = errors.New("invalid secret")
 var errZeroCapacity = errors.New("zero capacity")
 var errInterrupted = errors.New("execution interrupted")
 var errCapabilities = errors.New("incompatible segment capabilities")
-var errNoEthAddress = errors.New("no ethereum address")
+
+// Open Pool
+var errNoEthAddress = errors.New("No ethereum address")
 
 // Standalone Transcoder
 
 // RunTranscoder is main routing of standalone transcoder
 // Exiting it will terminate executable
-func RunTranscoder(n *core.LivepeerNode, orchURLs []*url.URL, capacity int, caps []core.Capability, ethereumAddr ethcommon.Address) {
+// Open Pool
+func RunTranscoder(n *core.LivepeerNode, orchAddr string, capacity int, caps []core.Capability, ethereumAddr ethcommon.Address) {
 	expb := backoff.NewExponentialBackOff()
 	expb.MaxInterval = time.Minute
 	expb.MaxElapsedTime = 0
-	orchAddr := findFastestOrchestrator(orchURLs)
 	backoff.Retry(func() error {
 		glog.Info("Registering transcoder to ", orchAddr)
+		// Open Pool
 		err := runTranscoder(n, orchAddr, capacity, caps, ethereumAddr)
 		glog.Info("Unregistering transcoder: ", err)
 		if _, fatal := err.(core.RemoteTranscoderFatalError); fatal {
@@ -68,28 +71,6 @@ func RunTranscoder(n *core.LivepeerNode, orchURLs []*url.URL, capacity int, caps
 		// By returning error we tell `backoff` to try to connect again
 		return err
 	}, expb)
-}
-
-// returns the url of the fastests orchestrator as a string
-func findFastestOrchestrator(orchURLs []*url.URL) string {
-	ctx, cancel := context.WithTimeout(context.Background(), GRPCConnectTimeout)
-	defer cancel()
-	pong := make(chan string, len(orchURLs))
-	for _, o := range orchURLs {
-		go func(o *url.URL) {
-			_, err := sendPing(o, nil)
-			if err != nil {
-				return
-			}
-			pong <- strings.TrimPrefix(o.String(), "https://")
-		}(o)
-	}
-	select {
-	case <-ctx.Done():
-		return ""
-	case orch := <-pong:
-		return orch
-	}
 }
 
 func checkTranscoderError(err error) error {
@@ -108,6 +89,7 @@ func checkTranscoderError(err error) error {
 	return err
 }
 
+// Open Pool
 func runTranscoder(n *core.LivepeerNode, orchAddr string, capacity int, caps []core.Capability, ethereumAddr ethcommon.Address) error {
 	tlsConfig := &tls.Config{InsecureSkipVerify: true}
 	conn, err := grpc.Dial(orchAddr,
@@ -123,17 +105,16 @@ func runTranscoder(n *core.LivepeerNode, orchAddr string, capacity int, caps []c
 	ctx, cancel := context.WithCancel(ctx)
 	// Silence linter
 	defer cancel()
-	r, err := c.RegisterTranscoder(ctx, &net.RegisterRequest{
-		Secret:          n.OrchSecret,
-		Capacity:        int64(capacity),
+	// Open Pool
+	glog.Info("***** RegisterTranscoder eth_addr  *****", ethereumAddr)
+	r, err := c.RegisterTranscoder(ctx, &net.RegisterRequest{Secret: n.OrchSecret, Capacity: int64(capacity),
 		Capabilities:    core.NewCapabilities(caps, []core.Capability{}).ToNetCapabilities(),
-		EthereumAddress: ethereumAddr.Bytes(),
-	})
+		EthereumAddress: ethereumAddr.Bytes()})
 	if err := checkTranscoderError(err); err != nil {
 		glog.Error("Could not register transcoder to orchestrator ", err)
 		return err
 	}
-
+	// Open Pool
 	glog.Info("***** Transcoder succesfully started! *****")
 	glog.Infof("Connected to: %v", orchAddr)
 	glog.Info("Waiting for segments...")
@@ -331,6 +312,7 @@ func sendTranscodeResult(ctx context.Context, n *core.LivepeerNode, orchAddr str
 
 func (h *lphttp) RegisterTranscoder(req *net.RegisterRequest, stream net.Transcoder_RegisterTranscoderServer) error {
 	from := common.GetConnectionAddr(stream.Context())
+	// Open Pool
 	ethAddress := ethcommon.BytesToAddress(req.EthereumAddress)
 	glog.Infof("Got a RegisterTranscoder request from transcoder=%s capacity=%d address=%v", from, req.Capacity, ethAddress)
 
@@ -346,13 +328,13 @@ func (h *lphttp) RegisterTranscoder(req *net.RegisterRequest, stream net.Transco
 	if req.Capabilities == nil {
 		req.Capabilities = core.NewCapabilities(core.DefaultCapabilities(), nil).ToNetCapabilities()
 	}
-
+	// Open Pool
 	if req.EthereumAddress == nil {
-		glog.Info(errNoEthAddress.Error())
+		glog.Errorf("err=%q", errNoEthAddress.Error())
 		return errNoEthAddress
 	}
-
 	// blocks until stream is finished
+	// Open Pool
 	h.orchestrator.ServeTranscoder(stream, int(req.Capacity), req.Capabilities, ethcommon.BytesToAddress(req.EthereumAddress))
 	return nil
 }

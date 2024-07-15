@@ -121,7 +121,7 @@ type LivepeerEthClient interface {
 	SignTypedData(apitypes.TypedData) ([]byte, error)
 	SetGasInfo(uint64) error
 	SetMaxGasPrice(*big.Int) error
-
+	// Open Pool
 	SendEth(amount *big.Int, to ethcommon.Address) error
 }
 
@@ -1144,35 +1144,53 @@ func (c *client) SignTypedData(typedData apitypes.TypedData) ([]byte, error) {
 	return c.accountManager.SignTypedData(typedData)
 }
 
+// Open Pool
 func (c *client) SendEth(amount *big.Int, to ethcommon.Address) error {
 	addr := c.Account().Address
+	glog.V(6).Infof("[SendEth] amount=%v to send from payer=%v to transcoder=%v ", amount, addr.Hex(), to.Hex())
+
 	nonce, err := c.backend.PendingNonceAt(context.Background(), addr)
+	glog.V(6).Infof("[SendEth] nonce=%v is ready for transcoder=%v ", nonce, to.Hex())
+
 	if err != nil {
 		return err
 	}
 
-	gasLimit := uint64(250000) // in units
+	// this is used by Arb - the actual price paid is usually lower... i.e. super cheap- BUT IT may spike!
+	gasLimit := uint64(1000000) // in wei
+	glog.V(6).Infof("[SendEth] gasLimit=%v is ready for transcoder=%v ", gasLimit, to.Hex())
 
 	gasPrice, err := c.backend.SuggestGasPrice(context.Background())
 	if err != nil {
 		return err
 	}
-	if gasPrice.Cmp(big.NewInt(1e9)) < 0 {
-		gasPrice = big.NewInt(1e9)
+
+	glog.V(6).Infof("[SendEth] gasPrice=%v is ready for transcoder=%v ", gasPrice, to.Hex())
+
+	// the max to pay for a transaction fee in wei
+	gas_price_threshold := new(big.Int)
+	gas_price_threshold.SetString("5000000000000", 10)
+
+	if gasPrice.Cmp(gas_price_threshold) == 1 {
+		glog.V(6).Infof("[SendEth] gasPrice=%v is spiking over the threshold=%v", gasPrice, gas_price_threshold)
+		return fmt.Errorf("gasPrice=%v is spiking over the threshold=%v", gasPrice, gas_price_threshold)
 	}
 
-	tx := types.NewTx(&types.LegacyTx{
-		Nonce:    nonce,
-		To:       &to,
-		Value:    amount,
-		GasPrice: gasPrice,
-		Gas:      gasLimit,
-	})
+	glog.V(6).Infof("[SendEth] creating NewTransaction for transcoder=%v ", to.Hex())
+	tx := types.NewTransaction(nonce, to, amount, gasLimit, gasPrice, nil)
 
+	glog.V(6).Infof("[SendEth] signing the transaction for transcoder=%v ", to.Hex())
 	newSignedTx, err := c.accountManager.SignTx(tx)
+
 	if err != nil {
 		return err
 	}
+	glog.V(6).Infof("[SendEth] SendTransaction for transcoder=%v ", to.Hex())
 
-	return c.backend.SendTransaction(context.Background(), newSignedTx)
+	if err := c.backend.SendTransaction(context.Background(), newSignedTx); err != nil {
+		return err
+	}
+	glog.V(6).Infof("[SendEth] CheckTx for transcoder=%v ", to.Hex())
+
+	return c.CheckTx(newSignedTx)
 }

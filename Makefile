@@ -109,4 +109,10 @@ livepeer_router:
 	GO111MODULE=on CGO_ENABLED=1 CC="$(cc)" CGO_CFLAGS="$(cgo_cflags)" CGO_LDFLAGS="$(cgo_ldflags) ${CGO_LDFLAGS}" go build -o $(GO_BUILD_DIR) -ldflags="$(ldflags)" cmd/livepeer_router/*.go
 
 docker:
-	docker buildx build --build-arg='BUILD_TAGS=mainnet,experimental' -f docker/Dockerfile .
+	docker buildx build --build-arg='BUILD_TAGS=mainnet,experimental' -t tztcloud/go-livepeer:grant-node-0.7.5.1 -f docker/Dockerfile .
+
+docker-windows:
+	docker buildx build --build-arg='BUILD_TAGS=mainnet,experimental' -t grant-node:0.7.5.1-windows-binary -f docker/Dockerfile.window-build .
+
+docker-linux:
+	docker buildx build --build-arg='BUILD_TAGS=mainnet,experimental' -t grant-node:0.7.5.1-linux-binary -f docker/Dockerfile.linux-build .

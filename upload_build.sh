@@ -63,7 +63,7 @@ if echo $VERSION | grep dirty; then
 fi
 
 # If we want to build with branch --> network support for any other networks, add them here!
-NETWORK_BRANCHES="mainnet"
+NETWORK_BRANCHES="rinkeby mainnet"
 # If the binaries are built off a network branch then the resource path should include the network branch name i.e. X.Y.Z/rinkeby or X.Y.Z/mainnet
 # If the binaries are not built off a network then the resource path should only include the version i.e. X.Y.Z
 VERSION_AND_NETWORK=$VERSION
@@ -77,7 +77,6 @@ NODE="./livepeer${EXT}"
 CLI="./livepeer_cli${EXT}"
 BENCH="./livepeer_bench${EXT}"
 ROUTER="./livepeer_router${EXT}"
-POOL="./livepool${EXT}"
 
 mkdir -p "${BASE_DIR}/$BASE"
 

@@ -1,3 +1,5 @@
+// Open Pool
+// REGEN THE GO STUBS: protoc -I=. --go_out=plugins=grpc:. net/lp_rpc.proto
 syntax = "proto3";
 
 package net;
@@ -327,7 +329,7 @@ message RegisterRequest {
     // Transcoder capabilities
     Capabilities capabilities = 3;
 
-    // Transcoder ethereum address
+    // Open Pool: Transcoder ethereum address
     bytes ethereum_address = 4;
 }
 

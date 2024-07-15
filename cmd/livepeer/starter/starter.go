@@ -146,6 +146,9 @@ type LivepeerConfig struct {
 	OrchBlacklist           *string
 	OrchMinLivepeerVersion  *string
 	TestOrchAvail           *bool
+
+	TranscoderPool *bool
+	PoolCommission *int
 }
 
 // DefaultLivepeerConfig creates LivepeerConfig exactly the same as when no flags are passed to the livepeer process.
@@ -236,6 +239,10 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	// Flags
 	defaultTestOrchAvail := true
 
+	// Open Pool
+	defaultTranscoderPool := false
+	defaultPoolCommission := 1
+
 	return LivepeerConfig{
 		// Network & Addresses:
 		Network:      &defaultNetwork,
@@ -322,6 +329,9 @@ func DefaultLivepeerConfig() LivepeerConfig {
 
 		// Flags
 		TestOrchAvail: &defaultTestOrchAvail,
+		// Open Pool
+		TranscoderPool: &defaultTranscoderPool,
+		PoolCommission: &defaultPoolCommission,
 	}
 }
 
@@ -848,6 +858,18 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 				glog.Errorf("Error setting up PM recipient: %v", err)
 				return
 			}
+
+			// Open Pool
+			if *cfg.TranscoderPool {
+				glog.Infof("Open Pool Enabled commision: %v", *cfg.PoolCommission)
+
+				comissionRate := big.NewInt(int64(*cfg.PoolCommission))
+				pool := core.NewPublicTranscoderPool(n, timeWatcher.SubscribeRounds, comissionRate)
+				n.TranscoderManager.Pool = pool
+				go pool.StartPayoutLoop()
+				defer pool.StopPayoutLoop()
+			}
+
 			mfv, _ := new(big.Int).SetString(*cfg.MaxFaceValue, 10)
 			if mfv == nil {
 				panic(fmt.Errorf("-maxFaceValue must be a valid integer, but %v provided. Restart the node with a different valid value for -maxFaceValue", *cfg.MaxFaceValue))
@@ -1262,11 +1284,16 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		if n.OrchSecret == "" {
 			glog.Exit("Missing -orchSecret")
 		}
+		// Open Pool
+		if *cfg.EthAcctAddr == "" {
+			glog.Fatal("Must provide an Ethereum address to receive payouts")
+		}
 		if len(orchURLs) <= 0 {
 			glog.Exit("Missing -orchAddr")
 		}
 
-		go server.RunTranscoder(n, orchURLs[0].Host, core.MaxSessions, transcoderCaps)
+		//Open Pool
+		go server.RunTranscoder(n, orchURLs[0].Host, core.MaxSessions, transcoderCaps, ethcommon.HexToAddress(*cfg.EthAcctAddr))
 	}
 
 	switch n.NodeType {

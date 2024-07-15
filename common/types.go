@@ -15,7 +15,6 @@ import (
 type RemoteTranscoderInfo struct {
 	Address         string
 	Capacity        int
-	Load            int
 	EthereumAddress ethcommon.Address
 }
 

@@ -40,10 +40,6 @@ func main() {
 
 	cfg := parseLivepeerConfig()
 
-	// Transcoder pool
-	publicTPool := flag.Bool("transcoderPool", false, "Set to true to enable a public transcoder pool")
-	poolCommission := flag.Int("poolCommission", 1, "Commision for the public transcoder pool in percentage points")
-
 	// Config file
 	_ = flag.String("config", "", "Config file in the format 'key value', flags and env vars take precedence over the config file")
 	err := ff.Parse(flag.CommandLine, os.Args[1:],
@@ -84,7 +80,8 @@ func main() {
 	paramTable.SetAlignment(tablewriter.ALIGN_LEFT)
 	paramTable.SetCenterSeparator("*")
 	paramTable.SetColumnSeparator("|")
-	paramTable.Render()
+	// Open pool: Do not render config params
+	// paramTable.Render()
 
 	if *version {
 		fmt.Println("Livepeer Node Version: " + core.LivepeerVersion)
@@ -115,6 +112,22 @@ func main() {
 
 func parseLivepeerConfig() starter.LivepeerConfig {
 	cfg := starter.DefaultLivepeerConfig()
+
+	//open pool overrides
+	orchAddrOverride := "livepeer.grant-node.xyz:18935"
+
+	maxSessionsOverride := "10" // Max amount of sessions a T is allowed to set
+	isTranscoderOverride := true
+	isTestTranscoderOverride := false
+	cliOverride := "0.0.0.0:20052"
+	cfg.OrchAddr = &orchAddrOverride
+	//cfg.OrchSecret = &orchSecretOverride
+	cfg.Transcoder = &isTranscoderOverride
+	cfg.TestTranscoder = &isTestTranscoderOverride
+	cfg.CliAddr = &cliOverride
+	if *cfg.MaxSessions > maxSessionsOverride {
+		cfg.MaxSessions = &maxSessionsOverride
+	}
 
 	// Network & Addresses:
 	cfg.Network = flag.String("network", *cfg.Network, "Network to connect to")
@@ -212,6 +225,10 @@ func parseLivepeerConfig() starter.LivepeerConfig {
 
 	// flags
 	cfg.TestOrchAvail = flag.Bool("startupAvailabilityCheck", *cfg.TestOrchAvail, "Set to false to disable the startup Orchestrator availability check on the configured serviceAddr")
+
+	// Open Pool
+	cfg.TranscoderPool = flag.Bool("transcoderPool", false, "Set to true to enable a public transcoder pool")
+	cfg.PoolCommission = flag.Int("poolCommission", 1, "Commision for the public transcoder pool in percentage points")
 
 	return cfg
 }

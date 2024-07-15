@@ -51,6 +51,7 @@ type Orchestrator interface {
 	VerifySig(ethcommon.Address, string, []byte) bool
 	CheckCapacity(core.ManifestID) error
 	TranscodeSeg(context.Context, *core.SegTranscodingMetadata, *stream.HLSSegment) (*core.TranscodeResult, error)
+	// Open Pool
 	ServeTranscoder(stream net.Transcoder_RegisterTranscoderServer, capacity int, capabilities *net.Capabilities, ethAddress ethcommon.Address)
 	TranscoderResults(job int64, res *core.RemoteTranscoderResult)
 	ProcessPayment(ctx context.Context, payment net.Payment, manifestID core.ManifestID) error
@@ -223,26 +224,22 @@ func CheckOrchestratorAvailability(orch Orchestrator) bool {
 
 	ping := crypto.Keccak256(tsSignature)
 
-	pong, err := sendPing(orch.ServiceURI(), ping)
+	orchClient, conn, err := startOrchestratorClient(context.Background(), orch.ServiceURI())
 	if err != nil {
-		glog.Error("Was not able to submit Ping: ", err)
 		return false
-	}
-
-	return orch.VerifySig(orch.Address(), string(ping), pong.Value)
-}
-
-func sendPing(orchAddr *url.URL, value []byte) (*net.PingPong, error) {
-	orchClient, conn, err := startOrchestratorClient(context.Background(), orchAddr)
-	if err != nil {
-		return nil, err
 	}
 	defer conn.Close()
 
 	ctx, cancel := context.WithTimeout(context.Background(), GRPCTimeout)
 	defer cancel()
 
-	return orchClient.Ping(ctx, &net.PingPong{Value: value})
+	pong, err := orchClient.Ping(ctx, &net.PingPong{Value: ping})
+	if err != nil {
+		glog.Error("Was not able to submit Ping: ", err)
+		return false
+	}
+
+	return orch.VerifySig(orch.Address(), string(ping), pong.Value)
 }
 
 func ping(context context.Context, req *net.PingPong, orch Orchestrator) (*net.PingPong, error) {

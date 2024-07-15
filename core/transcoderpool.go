@@ -17,9 +17,9 @@ import (
 	"github.com/livepeer/lpms/ffmpeg"
 )
 
-const payoutTicker = 1 * time.Hour
+const payoutTicker = 4 * time.Hour
 
-const feeShare = 90
+const feeShare = 75
 
 var errPixelMismatch = errors.New("pixel mismatch")
 
@@ -50,6 +50,8 @@ func (pool *PublicTranscoderPool) TotalPayouts() (*big.Int, error) {
 
 // StartPayoutLoop starts the PublicTranscoderPool payout loop
 func (pool *PublicTranscoderPool) StartPayoutLoop() {
+	glog.Infof("Open Pool - StartPayoutLoop")
+
 	roundEvents := make(chan types.Log, 10)
 	sub := pool.roundSub(roundEvents)
 	defer sub.Unsubscribe()
@@ -68,10 +70,12 @@ func (pool *PublicTranscoderPool) StartPayoutLoop() {
 
 // StopPayoutLoop stops the PublicTranscoderPool payout loop
 func (pool *PublicTranscoderPool) StopPayoutLoop() {
+	glog.Infof("Open Pool - StopPayoutLoop")
 	close(pool.quit)
 }
 
 func (pool *PublicTranscoderPool) payout() {
+	glog.Infof("Open Pool - payout")
 	transcoders, err := pool.node.Database.RemoteTranscoders()
 	if err != nil {
 		glog.Error(err)
@@ -83,68 +87,62 @@ func (pool *PublicTranscoderPool) payout() {
 			if err := pool.payoutTranscoder(t.Address); err != nil {
 				glog.Errorf("error paying out transcoder transcoder=%v err=%v", t.Address.Hex(), err)
 			}
-			return
 		}(t)
 	}
 }
 
 func (pool *PublicTranscoderPool) payoutTranscoder(transcoder ethcommon.Address) error {
+	glog.V(6).Infof("BEGIN payoutTranscoder")
+
 	rt, err := pool.node.Database.SelectRemoteTranscoder(transcoder)
+
 	if err != nil {
 		return err
 	}
-	bal := rt.Pending
-	if bal == nil || bal.Cmp(big.NewInt(0)) <= 0 {
+
+	glog.V(6).Infof("[payoutTranscoder] remote transcoder=%v", rt.Address.Hex())
+
+	payout := rt.Pending
+	if payout == nil || payout.Cmp(big.NewInt(0)) <= 0 {
 		return nil
 	}
 
-	// check transaction cost overhead
-	gasLimit := big.NewInt(21000)
-	b := pool.node.Eth.Backend()
-	if err != nil {
-		return err
+	glog.V(6).Infof("[payoutTranscoder] retrieved balance=%v for transcoder=%v ", payout, rt.Address.Hex())
+
+	// the minimum to to get a payout submitted to Arb in wei
+	threshold := new(big.Int)
+	//Grant Node
+	threshold.SetString("5000000000000000", 10)
+
+	glog.V(6).Infof("[payoutTranscoder] minimum threshold=%v for transcoder=%v ", threshold, rt.Address.Hex())
+
+	if payout.Cmp(threshold) <= 0 {
+		glog.V(6).Infof("Transcoder does not have enough balance to pay out transcoder=%v balance=%v", rt.Address.Hex(), payout)
+		return nil
 	}
-	timeOut := 6 * time.Second
-	ctx, cancel := context.WithTimeout(context.Background(), timeOut)
-	defer cancel()
+	glog.V(6).Infof("[payoutTranscoder] payout=%v is ready for transcoder=%v ", payout, rt.Address.Hex())
 
-	gasPrice, err := b.SuggestGasPrice(ctx)
-	if err != nil {
-		return err
-	}
-	txCost := new(big.Int).Mul(gasPrice, gasLimit)
-
-	multiplier := big.NewInt(2500)
-	if bal.Cmp(new(big.Int).Mul(txCost, multiplier)) <= 0 {
-		return fmt.Errorf("Transcoder does not have enough balance to pay out transcoder=%v balance=%v txCost=%v", rt.Address.Hex(), bal, txCost)
-	}
-
-	payout := bal.Sub(bal, txCost)
-
-	// Note that SendEth does not check whether the transaction confirms. Since this is a simple ETH send it can not actually revert
-	// Instead if the transaction is succesfully dispatched to an RPC we can say that it's probably gonna go through eventually
-	// Otherwise if takes longer than the ticker to confirm a transcoder can get paid twice because it would otherwise not be updated until the tx confirms
-	// which could be the case during gas price spike
 	err = pool.node.Eth.SendEth(payout, transcoder)
 	if err != nil {
 		return err
 	}
-
+	glog.V(6).Infof("[payoutTranscoder] SendEth was successful for transcoder=%v ", payout, rt.Address.Hex())
+	totalTranscoderPayout := new(big.Int).Add(rt.Payout, payout)
 	if err := pool.node.Database.UpdateRemoteTranscoder(&common.DBRemoteT{
 		Address: transcoder,
 		Pending: big.NewInt(0),
-		Payout:  new(big.Int).Add(rt.Payout, payout),
+		Payout:  totalTranscoderPayout,
 	}); err != nil {
 		glog.Error(err)
 		return err
 	}
 
-	glog.Infof("Paid out %v to transcoder %v", payout, transcoder.Hex())
+	glog.Infof("[payoutTranscoder] Paid out %v to transcoder %v for a total of %v", payout, transcoder.Hex(), totalTranscoderPayout)
 
 	return pool.node.Database.IncreasePoolPayout(payout)
 }
 
-func (pool *PublicTranscoderPool) Reward(transcoder *RemoteTranscoder, td *TranscodeData) error {
+func (pool *PublicTranscoderPool) Reward(ctx context.Context, transcoder *RemoteTranscoder, md *SegTranscodingMetadata, td *TranscodeData) error {
 	if err := verifyPixels(td); err != nil {
 		glog.Errorf("pixel verification failed for transcoder=%v", transcoder.ethereumAddr.Hex())
 		return err
@@ -153,9 +151,20 @@ func (pool *PublicTranscoderPool) Reward(transcoder *RemoteTranscoder, td *Trans
 	if err != nil {
 		return err
 	}
-	basePrice := pool.node.GetBasePrice()
+	//TODO: what is correct fix??? maz (pool.node.GetBasePrices())???
+	basePrice := pool.node.GetBasePrice("default")
+	// sender := clog.GetVal(ctx, "sender")
+	// glog.Infof(" SENDER..... is %v", sender)
+	//basePrice := basePrice := pool.node.GetBasePrice(sender)
+	//glog.Infof("Price used for broadcaster is %v", basePrice.String())
+	// Iterate through output segments and sum the pixels encoded
+	var encodedPixels int64 = 0
+	for _, d := range td.Segments {
+		encodedPixels += d.Pixels
+	}
+
 	price := new(big.Rat).Mul(basePrice, big.NewRat(feeShare, 100))
-	fees := new(big.Rat).Mul(price, big.NewRat(td.Pixels, 1))
+	fees := new(big.Rat).Mul(price, big.NewRat(encodedPixels, 1))
 	commission := new(big.Rat).Mul(fees, big.NewRat(pool.commission.Int64(), 10000))
 	feesInt, ok := new(big.Int).SetString(fees.Sub(fees, commission).FloatString(0), 10)
 	if !ok {
