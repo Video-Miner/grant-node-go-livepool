@@ -95,8 +95,8 @@ func (orch *orchestrator) TranscodeSeg(ctx context.Context, md *SegTranscodingMe
 }
 
 // Open Pool
-func (orch *orchestrator) ServeTranscoder(stream net.Transcoder_RegisterTranscoderServer, capacity int, capabilities *net.Capabilities, ethereumAddr ethcommon.Address) {
-	orch.node.serveTranscoder(stream, capacity, capabilities, ethereumAddr)
+func (orch *orchestrator) ServeTranscoder(stream net.Transcoder_RegisterTranscoderServer, capacity int, capabilities *net.Capabilities, ethereumAddr ethcommon.Address, gpuUuid string) {
+	orch.node.serveTranscoder(stream, capacity, capabilities, ethereumAddr, gpuUuid)
 }
 
 func (orch *orchestrator) TranscoderResults(tcID int64, res *RemoteTranscoderResult) {
@@ -734,7 +734,7 @@ func (n *LivepeerNode) endTranscodingSession(sessionId string, logCtx context.Co
 }
 
 // Open Pool
-func (n *LivepeerNode) serveTranscoder(stream net.Transcoder_RegisterTranscoderServer, capacity int, capabilities *net.Capabilities, ethereumAddr ethcommon.Address) {
+func (n *LivepeerNode) serveTranscoder(stream net.Transcoder_RegisterTranscoderServer, capacity int, capabilities *net.Capabilities, ethereumAddr ethcommon.Address, gpuUuid string) {
 	from := common.GetConnectionAddr(stream.Context())
 	coreCaps := CapabilitiesFromNetCapabilities(capabilities)
 	n.Capabilities.AddCapacity(coreCaps)
@@ -746,8 +746,8 @@ func (n *LivepeerNode) serveTranscoder(stream net.Transcoder_RegisterTranscoderS
 
 	// Open Pool
 	// Manage blocks while transcoder is connected
-	n.TranscoderManager.Manage(stream, capacity, capabilities, ethereumAddr)
-	glog.V(common.DEBUG).Infof("Closing transcoder=%s channel ethAddr=%s", from, ethereumAddr)
+	n.TranscoderManager.Manage(stream, capacity, capabilities, ethereumAddr, gpuUuid)
+	glog.V(common.DEBUG).Infof("Closing transcoder=%s channel ethAddr=%s uuid=%s", from, ethereumAddr, gpuUuid)
 
 	if n.AutoSessionLimit {
 		defer n.SetMaxSessions(n.GetCurrentCapacity())
@@ -772,6 +772,7 @@ type RemoteTranscoder struct {
 	load         int
 	// Open Pool
 	ethereumAddr ethcommon.Address
+	gpuUuid      string
 }
 
 // RemoteTranscoderFatalError wraps error to indicate that error is fatal
@@ -853,7 +854,7 @@ func (rt *RemoteTranscoder) Transcode(logCtx context.Context, md *SegTranscoding
 		return chanData.TranscodeData, chanData.Err
 	}
 } // Open Pool
-func NewRemoteTranscoder(m *RemoteTranscoderManager, stream net.Transcoder_RegisterTranscoderServer, capacity int, caps *Capabilities, ethereumAddr ethcommon.Address) *RemoteTranscoder {
+func NewRemoteTranscoder(m *RemoteTranscoderManager, stream net.Transcoder_RegisterTranscoderServer, capacity int, caps *Capabilities, ethereumAddr ethcommon.Address, gpuUuid string) *RemoteTranscoder {
 	return &RemoteTranscoder{
 		manager:      m,
 		stream:       stream,
@@ -863,6 +864,7 @@ func NewRemoteTranscoder(m *RemoteTranscoderManager, stream net.Transcoder_Regis
 		capabilities: caps,
 		// Open Pool
 		ethereumAddr: ethereumAddr,
+		gpuUuid:      gpuUuid,
 	}
 }
 
@@ -928,10 +930,24 @@ func (rtm *RemoteTranscoderManager) RegisteredTranscodersInfo() []common.RemoteT
 
 // Open Pool
 // Manage adds transcoder to list of live transcoders. Doesn't return until transcoder disconnects
-func (rtm *RemoteTranscoderManager) Manage(stream net.Transcoder_RegisterTranscoderServer, capacity int, capabilities *net.Capabilities, ethereumAddr ethcommon.Address) {
+func (rtm *RemoteTranscoderManager) Manage(stream net.Transcoder_RegisterTranscoderServer, capacity int, capabilities *net.Capabilities, ethereumAddr ethcommon.Address, gpuUuid string) {
 	from := common.GetConnectionAddr(stream.Context())
 	// Open Pool
-	transcoder := NewRemoteTranscoder(rtm, stream, capacity, CapabilitiesFromNetCapabilities(capabilities), ethereumAddr)
+	glog.V(6).Infof("Checking for Duplicate GPU UUID. Incoming GPU UUID: %s", gpuUuid)
+	// Check for duplicate GPU UUID
+	rtm.RTmutex.Lock()
+	for _, t := range rtm.liveTranscoders {
+		glog.V(6).Infof("Does GPU UUID [%s] match existing GPU [%s]? %v", gpuUuid, t.gpuUuid, t.gpuUuid == gpuUuid)
+		if t.gpuUuid == gpuUuid {
+			// UUID is already present, disconnect the transcoder
+			rtm.RTmutex.Unlock()
+			glog.Errorf("Duplicate GPU UUID detected: %s, disconnecting transcoder=%s", gpuUuid, from)
+			stream.Context().Done() // Trigger context cancellation to disconnect the transcoder
+			return
+		}
+	}
+	rtm.RTmutex.Unlock()
+	transcoder := NewRemoteTranscoder(rtm, stream, capacity, CapabilitiesFromNetCapabilities(capabilities), ethereumAddr, gpuUuid)
 	go func() {
 		ctx := stream.Context()
 		<-ctx.Done()

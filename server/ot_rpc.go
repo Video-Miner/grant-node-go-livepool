@@ -48,20 +48,21 @@ var errCapabilities = errors.New("incompatible segment capabilities")
 
 // Open Pool
 var errNoEthAddress = errors.New("No ethereum address")
+var errNoGpuUuid = errors.New("No gpu uuid")
 
 // Standalone Transcoder
 
 // RunTranscoder is main routing of standalone transcoder
 // Exiting it will terminate executable
 // Open Pool
-func RunTranscoder(n *core.LivepeerNode, orchAddr string, capacity int, caps []core.Capability, ethereumAddr ethcommon.Address) {
+func RunTranscoder(n *core.LivepeerNode, orchAddr string, capacity int, caps []core.Capability, ethereumAddr ethcommon.Address, gpuUuid string) {
 	expb := backoff.NewExponentialBackOff()
 	expb.MaxInterval = time.Minute
 	expb.MaxElapsedTime = 0
 	backoff.Retry(func() error {
 		glog.Info("Registering transcoder to ", orchAddr)
 		// Open Pool
-		err := runTranscoder(n, orchAddr, capacity, caps, ethereumAddr)
+		err := runTranscoder(n, orchAddr, capacity, caps, ethereumAddr, gpuUuid)
 		glog.Info("Unregistering transcoder: ", err)
 		if _, fatal := err.(core.RemoteTranscoderFatalError); fatal {
 			glog.Info("Terminating transcoder because of ", err)
@@ -90,7 +91,7 @@ func checkTranscoderError(err error) error {
 }
 
 // Open Pool
-func runTranscoder(n *core.LivepeerNode, orchAddr string, capacity int, caps []core.Capability, ethereumAddr ethcommon.Address) error {
+func runTranscoder(n *core.LivepeerNode, orchAddr string, capacity int, caps []core.Capability, ethereumAddr ethcommon.Address, gpuUuid string) error {
 	tlsConfig := &tls.Config{InsecureSkipVerify: true}
 	conn, err := grpc.Dial(orchAddr,
 		grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig)))
@@ -109,7 +110,8 @@ func runTranscoder(n *core.LivepeerNode, orchAddr string, capacity int, caps []c
 	glog.Info("***** RegisterTranscoder eth_addr  *****", ethereumAddr)
 	r, err := c.RegisterTranscoder(ctx, &net.RegisterRequest{Secret: n.OrchSecret, Capacity: int64(capacity),
 		Capabilities:    core.NewCapabilities(caps, []core.Capability{}).ToNetCapabilities(),
-		EthereumAddress: ethereumAddr.Bytes()})
+		EthereumAddress: ethereumAddr.Bytes(),
+		GpuUuid:         gpuUuid})
 	if err := checkTranscoderError(err); err != nil {
 		glog.Error("Could not register transcoder to orchestrator ", err)
 		return err
@@ -314,7 +316,8 @@ func (h *lphttp) RegisterTranscoder(req *net.RegisterRequest, stream net.Transco
 	from := common.GetConnectionAddr(stream.Context())
 	// Open Pool
 	ethAddress := ethcommon.BytesToAddress(req.EthereumAddress)
-	glog.Infof("Got a RegisterTranscoder request from transcoder=%s capacity=%d address=%v", from, req.Capacity, ethAddress)
+	gpu_uuid := req.GpuUuid
+	glog.Infof("Got a RegisterTranscoder request from transcoder=%s capacity=%d address=%v uuid=%v", from, req.Capacity, ethAddress, gpu_uuid)
 
 	if req.Secret != h.orchestrator.TranscoderSecret() {
 		glog.Errorf("err=%q", errSecret.Error())
@@ -333,9 +336,13 @@ func (h *lphttp) RegisterTranscoder(req *net.RegisterRequest, stream net.Transco
 		glog.Errorf("err=%q", errNoEthAddress.Error())
 		return errNoEthAddress
 	}
+	if req.GpuUuid == "" {
+		glog.Errorf("err=%q", errNoGpuUuid.Error())
+		return errNoGpuUuid
+	}
 	// blocks until stream is finished
 	// Open Pool
-	h.orchestrator.ServeTranscoder(stream, int(req.Capacity), req.Capabilities, ethcommon.BytesToAddress(req.EthereumAddress))
+	h.orchestrator.ServeTranscoder(stream, int(req.Capacity), req.Capabilities, ethcommon.BytesToAddress(req.EthereumAddress), gpu_uuid)
 	return nil
 }
 

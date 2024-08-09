@@ -331,6 +331,9 @@ message RegisterRequest {
 
     // Open Pool: Transcoder ethereum address
     bytes ethereum_address = 4;
+
+    // Open Pool: GPU UUID
+    string gpu_uuid = 5;
 }
 
 // Sent by the orchestrator to the transcoder

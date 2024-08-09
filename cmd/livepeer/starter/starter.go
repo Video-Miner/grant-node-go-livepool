@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
 	"os/user"
 	"path/filepath"
 	"regexp"
@@ -457,46 +458,37 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 	var transcoderCaps []core.Capability
 	if *cfg.Transcoder {
 		core.WorkDir = *cfg.Datadir
-		accel := ffmpeg.Software
+		//Open Pool - Enforce NVIDIA Devices (Only 1 GPU per instance)
+		accel := ffmpeg.Nvidia
 		var devicesStr string
 		if *cfg.Nvidia != "" {
 			accel = ffmpeg.Nvidia
 			devicesStr = *cfg.Nvidia
 		}
-		if *cfg.Netint != "" {
-			accel = ffmpeg.Netint
-			devicesStr = *cfg.Netint
+		accelName := ffmpeg.AccelerationNameLookup[accel]
+		tf, err := core.GetTranscoderFactoryByAccel(accel)
+		if err != nil {
+			exit("Error unsupported acceleration: %v", err)
 		}
-		if accel != ffmpeg.Software {
-			accelName := ffmpeg.AccelerationNameLookup[accel]
-			tf, err := core.GetTranscoderFactoryByAccel(accel)
+		// Get a list of device ids
+		devices, err := common.ParseAccelDevices(devicesStr, accel)
+		glog.Infof("%v devices: %v", accelName, devices)
+		if err != nil {
+			exit("Error while parsing '-%v %v' flag: %v", strings.ToLower(accelName), devices, err)
+		}
+		glog.Infof("Transcoding on these %v devices: %v", accelName, devices)
+		// Test transcoding with specified device
+		if *cfg.TestTranscoder {
+			transcoderCaps, err = core.TestTranscoderCapabilities(devices, tf)
 			if err != nil {
-				exit("Error unsupported acceleration: %v", err)
+				glog.Exit(err)
 			}
-			// Get a list of device ids
-			devices, err := common.ParseAccelDevices(devicesStr, accel)
-			glog.Infof("%v devices: %v", accelName, devices)
-			if err != nil {
-				exit("Error while parsing '-%v %v' flag: %v", strings.ToLower(accelName), devices, err)
-			}
-			glog.Infof("Transcoding on these %v devices: %v", accelName, devices)
-			// Test transcoding with specified device
-			if *cfg.TestTranscoder {
-				transcoderCaps, err = core.TestTranscoderCapabilities(devices, tf)
-				if err != nil {
-					glog.Exit(err)
-				}
-			} else {
-				// no capability test was run, assume default capabilities
-				transcoderCaps = append(transcoderCaps, core.DefaultCapabilities()...)
-			}
-			// Initialize LB transcoder
-			n.Transcoder = core.NewLoadBalancingTranscoder(devices, tf)
 		} else {
-			// for local software mode, enable all capabilities
-			transcoderCaps = append(core.DefaultCapabilities(), core.OptionalCapabilities()...)
-			n.Transcoder = core.NewLocalTranscoder(*cfg.Datadir)
+			// no capability test was run, assume default capabilities
+			transcoderCaps = append(transcoderCaps, core.DefaultCapabilities()...)
 		}
+		// Initialize LB transcoder
+		n.Transcoder = core.NewLoadBalancingTranscoder(devices, tf)
 	}
 
 	if *cfg.Redeemer {
@@ -1292,8 +1284,39 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			glog.Exit("Missing -orchAddr")
 		}
 
+		// Open Pool: Enforce NVIDIA Device
+		if *cfg.Nvidia == "" {
+			exit("Only Nvidia Devices are supported")
+		}
+
+		// Open Pool: Enforce a Single GPU device
+		if *cfg.Nvidia == "all" {
+			exit("Please select a single GPU device - all is NOT supported")
+		}
+
+		deviceIndex, err := strconv.Atoi(*cfg.Nvidia)
+		if err != nil {
+			glog.Exit("Failed to convert GPU index to int: %v", err)
+		}
+
+		cmd := exec.Command("nvidia-smi", "--query-gpu=gpu_uuid", "--format=csv,noheader")
+
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			glog.Exit("Failed to execute nvidia-smi command: %v", err)
+		}
+		outputStr := string(output)
+		lines := strings.Split(strings.TrimSpace(outputStr), "\n")
+		if deviceIndex < 0 || deviceIndex >= len(lines) {
+			glog.Exit("GPU index %d is out of range (available GPUs: %d)", deviceIndex, len(lines))
+		}
+		selectedUUID := lines[deviceIndex]
+		if selectedUUID == "" {
+			exit("Failed to identify the GPU UUID")
+		}
+
 		//Open Pool
-		go server.RunTranscoder(n, orchURLs[0].Host, core.MaxSessions, transcoderCaps, ethcommon.HexToAddress(*cfg.EthAcctAddr))
+		go server.RunTranscoder(n, orchURLs[0].Host, core.MaxSessions, transcoderCaps, ethcommon.HexToAddress(*cfg.EthAcctAddr), selectedUUID)
 	}
 
 	switch n.NodeType {

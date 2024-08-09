@@ -52,7 +52,7 @@ type Orchestrator interface {
 	CheckCapacity(core.ManifestID) error
 	TranscodeSeg(context.Context, *core.SegTranscodingMetadata, *stream.HLSSegment) (*core.TranscodeResult, error)
 	// Open Pool
-	ServeTranscoder(stream net.Transcoder_RegisterTranscoderServer, capacity int, capabilities *net.Capabilities, ethAddress ethcommon.Address)
+	ServeTranscoder(stream net.Transcoder_RegisterTranscoderServer, capacity int, capabilities *net.Capabilities, ethAddress ethcommon.Address, gpuUuid string)
 	TranscoderResults(job int64, res *core.RemoteTranscoderResult)
 	ProcessPayment(ctx context.Context, payment net.Payment, manifestID core.ManifestID) error
 	TicketParams(sender ethcommon.Address, priceInfo *net.PriceInfo) (*net.TicketParams, error)
